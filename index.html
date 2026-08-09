@@ -5,44 +5,53 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>بازی نقطه و خط</title>
   
-  <!-- اتصال به فایربیس -->
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
   
   <style>
-    body { font-family: Tahoma, sans-serif; text-align: center; background: #f4f4f9; padding: 20px; margin: 0; }
-    #board { display: inline-grid; gap: 2px; background: #222; padding: 5px; border-radius: 8px; margin-top: 15px; direction: ltr;}
-    .dot { width: 15px; height: 15px; background: #fff; border-radius: 50%; }
-    .hline { width: 60px; height: 15px; background: #444; cursor: pointer; transition: 0.2s; }
-    .vline { width: 15px; height: 60px; background: #444; cursor: pointer; transition: 0.2s; }
-    .box { width: 60px; height: 60px; background: #333; transition: 0.3s; }
-    .hline:hover, .vline:hover { background: #777; }
-    .p1 { background: #e74c3c !important; } /* قرمز */
-    .p2 { background: #3498db !important; } /* آبی */
+    body { font-family: Tahoma, sans-serif; text-align: center; background: #f4f4f9; padding: 10px; margin: 0; }
+    #room-menu { margin-top: 50px; }
+    input, button { padding: 10px; margin: 5px; font-size: 16px; border-radius: 5px; border: 1px solid #ccc; }
+    button { background: #2ecc71; color: white; cursor: pointer; border: none; }
+    
+    #game-container { display: none; }
+    #board { display: inline-grid; gap: 1px; background: #222; padding: 4px; border-radius: 8px; margin-top: 10px; direction: ltr;}
+    
+    /* ابعاد جدید برای جا شدن تخته بزرگ در موبایل */
+    .dot { width: 8px; height: 8px; background: #fff; border-radius: 50%; }
+    .hline { width: 22px; height: 8px; background: #444; cursor: pointer; }
+    .vline { width: 8px; height: 22px; background: #444; cursor: pointer; }
+    .box { width: 22px; height: 22px; background: #333; transition: 0.2s; }
+    
+    .p1 { background: #e74c3c !important; }
+    .p2 { background: #3498db !important; }
     .taken { pointer-events: none; }
-    .controls button { padding: 10px 20px; margin: 5px; font-size: 15px; cursor: pointer; border: none; border-radius: 5px; color: white; }
-    .btn-reset { background: #2ecc71; color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; margin-top: 20px;}
+    
+    .room-badge { background: #333; color: #fff; padding: 5px 10px; border-radius: 5px; display: inline-block; letter-spacing: 2px;}
   </style>
 </head>
 <body>
 
   <h2>نقطه و خط آنلاین</h2>
-  
-  <div class="controls" id="roleSelection">
-    <p>برای شروع، هرکدام یک رنگ را انتخاب کنید:</p>
-    <button onclick="setPlayer(1)" style="background: #e74c3c;">من قرمز هستم (بازیکن ۱)</button>
-    <button onclick="setPlayer(2)" style="background: #3498db;">من آبی هستم (بازیکن ۲)</button>
+
+  <!-- منوی ساخت و ورود به روم -->
+  <div id="room-menu">
+    <button onclick="createRoom()">ساخت بازی جدید (من قرمز)</button>
+    <hr style="margin: 30px 0; border: 0; border-top: 1px solid #ddd;">
+    <p>کد بازی دوستتان را وارد کنید:</p>
+    <input type="number" id="joinCode" placeholder="مثال: 4821">
+    <button onclick="joinRoom()" style="background: #3498db;">ورود (من آبی)</button>
   </div>
-  
-  <h3 id="status">در حال ارتباط با سرور...</h3>
-  <h4 id="score">قرمز: 0 | آبی: 0</h4>
-  
-  <div id="board"></div>
-  <br>
-  <button class="btn-reset" onclick="resetGame()">شروع مجدد بازی</button>
+
+  <!-- محیط اصلی بازی -->
+  <div id="game-container">
+    <h3 class="room-badge" id="roomDisplay"></h3>
+    <h4 id="score">قرمز: 0 | آبی: 0</h4>
+    <p id="status">در حال اتصال...</p>
+    <div id="board"></div>
+  </div>
 
   <script>
-    // اطلاعات دیتابیس شما
     const firebaseConfig = {
       apiKey: "AIzaSyBPL2MDK71tCkqJe_mWnEM9yEmUKKJRNsE",
       authDomain: "dot-and-box-36ebb.firebaseapp.com",
@@ -54,20 +63,55 @@
     };
 
     firebase.initializeApp(firebaseConfig);
-    const db = firebase.database().ref('game_room_1'); // مسیر ذخیره اطلاعات
-
-    const gridSize = 5; // تعداد نقطه‌ها در هر ردیف (شبکه 4x4 مربع)
+    
+    let dbRef = null;
+    const gridSize = 13; // 12x12 مربع
     let myPlayerId = null;
+    let roomId = null;
     let gameState = { lines: {}, boxes: {}, turn: 1, score: {1: 0, 2: 0} };
 
-    // انتخاب نقش
-    function setPlayer(id) {
-      myPlayerId = id;
-      document.getElementById('roleSelection').style.display = 'none';
-      render();
+    function createRoom() {
+      roomId = Math.floor(1000 + Math.random() * 9000).toString(); // تولید کد 4 رقمی
+      myPlayerId = 1;
+      
+      dbRef = firebase.database().ref('rooms/' + roomId);
+      dbRef.set({ lines: {}, boxes: {}, turn: 1, score: {1: 0, 2: 0} });
+      
+      startGameUI();
     }
 
-    // ساخت ظاهر شبکه بازی
+    function joinRoom() {
+      const code = document.getElementById('joinCode').value;
+      if (!code || code.length < 4) return alert('کد معتبر نیست!');
+      
+      const tempRef = firebase.database().ref('rooms/' + code);
+      tempRef.once('value', snap => {
+        if (snap.exists()) {
+          roomId = code;
+          myPlayerId = 2;
+          dbRef = tempRef;
+          startGameUI();
+        } else {
+          alert('بازی با این کد پیدا نشد!');
+        }
+      });
+    }
+
+    function startGameUI() {
+      document.getElementById('room-menu').style.display = 'none';
+      document.getElementById('game-container').style.display = 'block';
+      document.getElementById('roomDisplay').innerText = `کد بازی شما: ${roomId}`;
+      
+      initBoard();
+      
+      // اتصال لحظه‌ای به دیتابیس همین روم
+      dbRef.on('value', snap => {
+        const data = snap.val();
+        if (data) gameState = data;
+        render();
+      });
+    }
+
     function initBoard() {
       const board = document.getElementById('board');
       board.style.gridTemplateColumns = `repeat(${gridSize * 2 - 1}, auto)`;
@@ -95,38 +139,33 @@
       }
     }
 
-    // انجام حرکت
     function playMove(lineId) {
-      if (!myPlayerId) return alert('اول رنگ خود را انتخاب کنید!');
       if (gameState.turn !== myPlayerId) return alert('الان نوبت شما نیست!');
-      if (gameState.lines && gameState.lines[lineId]) return; // خط قبلا کشیده شده
+      if (gameState.lines && gameState.lines[lineId]) return;
 
       let newState = JSON.parse(JSON.stringify(gameState));
       if (!newState.lines) newState.lines = {};
       if (!newState.boxes) newState.boxes = {};
       if (!newState.score) newState.score = {1:0, 2:0};
 
-      newState.lines[lineId] = myPlayerId; // ثبت خط
+      newState.lines[lineId] = myPlayerId;
       
       let boxesClosed = checkBoxes(newState.lines, newState.boxes);
       if (boxesClosed > 0) {
-        // اگر مربعی کامل شد، امتیاز بگیر و نوبت را نگه دار
         newState.score[myPlayerId] += boxesClosed;
       } else {
-        // در غیر این صورت نوبت عوض می‌شود
         newState.turn = myPlayerId === 1 ? 2 : 1;
       }
 
-      db.set(newState); // ارسال به فایربیس
+      dbRef.set(newState);
     }
 
-    // بررسی کامل شدن مربع‌ها
     function checkBoxes(lines, boxes) {
       let closed = 0;
       for (let r = 0; r < gridSize - 1; r++) {
         for (let c = 0; c < gridSize - 1; c++) {
           let boxId = `b_${r}_${c}`;
-          if (!boxes[boxId]) { // اگر مربع قبلا گرفته نشده
+          if (!boxes[boxId]) {
             if (lines[`h_${r}_${c}`] && lines[`h_${r+1}_${c}`] && lines[`v_${r}_${c}`] && lines[`v_${r}_${c+1}`]) {
               boxes[boxId] = myPlayerId;
               closed++;
@@ -137,56 +176,26 @@
       return closed;
     }
 
-    // نمایش تغییرات روی صفحه
     function render() {
       if (!gameState.lines) gameState.lines = {};
       if (!gameState.boxes) gameState.boxes = {};
       
       document.querySelectorAll('.hline, .vline').forEach(el => {
         el.className = el.className.replace(/ p1| p2| taken/g, '');
-        if (gameState.lines[el.id]) {
-          el.classList.add(`p${gameState.lines[el.id]}`, 'taken');
-        }
+        if (gameState.lines[el.id]) el.classList.add(`p${gameState.lines[el.id]}`, 'taken');
       });
 
       document.querySelectorAll('.box').forEach(el => {
         el.className = el.className.replace(/ p1| p2/g, '');
-        if (gameState.boxes[el.id]) {
-          el.classList.add(`p${gameState.boxes[el.id]}`);
-        }
+        if (gameState.boxes[el.id]) el.classList.add(`p${gameState.boxes[el.id]}`);
       });
 
       const scores = gameState.score || {1:0, 2:0};
       document.getElementById('score').innerText = `قرمز: ${scores[1]} | آبی: ${scores[2]}`;
       
-      const statusText = gameState.turn === 1 ? "نوبت قرمز" : "نوبت آبی";
-      if (!myPlayerId) {
-        document.getElementById('status').innerText = "منتظر انتخاب بازیکن...";
-      } else {
-        document.getElementById('status').innerText = gameState.turn === myPlayerId ? `نوبت شماست` : `صبر کنید...`;
-        document.getElementById('status').style.color = gameState.turn === myPlayerId ? "#2ecc71" : "#e74c3c";
-      }
+      document.getElementById('status').innerText = gameState.turn === myPlayerId ? `نوبت شماست` : `منتظر حرکت حریف...`;
+      document.getElementById('status').style.color = gameState.turn === myPlayerId ? "#2ecc71" : "#e74c3c";
     }
-
-    // دریافت لحظه‌ای اطلاعات از فایربیس
-    db.on('value', snap => {
-      const data = snap.val();
-      if (data) {
-        gameState = data;
-      } else {
-        gameState = { lines: {}, boxes: {}, turn: 1, score: {1: 0, 2: 0} }; // دیتابیس خالی است
-      }
-      render();
-    });
-
-    // دکمه شروع مجدد
-    function resetGame() {
-      if(confirm('آیا مطمئن هستید که می‌خواهید بازی را ریست کنید؟')) {
-        db.set({ lines: {}, boxes: {}, turn: 1, score: {1: 0, 2: 0} });
-      }
-    }
-
-    initBoard();
   </script>
 </body>
 </html>
