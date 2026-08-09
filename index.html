@@ -52,7 +52,7 @@
   </div>
 
   <script>
-    const firebaseConfig = {
+const firebaseConfig = {
       apiKey: "AIzaSyBPL2MDK71tCkqJe_mWnEM9yEmUKKJRNsE",
       authDomain: "dot-and-box-36ebb.firebaseapp.com",
       databaseURL: "https://dot-and-box-36ebb-default-rtdb.firebaseio.com",
@@ -65,27 +65,30 @@
     firebase.initializeApp(firebaseConfig);
     
     let dbRef = null;
-    const gridSize = 13; // 12x12 مربع
+    const gridSize = 13;
     let myPlayerId = null;
     let roomId = null;
     let gameState = { lines: {}, boxes: {}, turn: 1, score: {1: 0, 2: 0} };
 
     function createRoom() {
-      roomId = Math.floor(1000 + Math.random() * 9000).toString(); // تولید کد 4 رقمی
+      roomId = Math.floor(1000 + Math.random() * 9000).toString();
       myPlayerId = 1;
-      
       dbRef = firebase.database().ref('rooms/' + roomId);
-      dbRef.set({ lines: {}, boxes: {}, turn: 1, score: {1: 0, 2: 0} });
       
-      startGameUI();
+      // اینجا منتظر می‌مانیم تا دیتابیس واقعاً ذخیره شود
+      dbRef.set({ lines: {}, boxes: {}, turn: 1, score: {1: 0, 2: 0} })
+        .then(() => startGameUI())
+        .catch(error => alert("خطا در ساخت روم: " + error.message));
     }
 
     function joinRoom() {
-      const code = document.getElementById('joinCode').value;
+      // حذف فاصله‌های اضافی که کیبورد موبایل می‌گذارد
+      const code = document.getElementById('joinCode').value.trim();
       if (!code || code.length < 4) return alert('کد معتبر نیست!');
       
       const tempRef = firebase.database().ref('rooms/' + code);
-      tempRef.once('value', snap => {
+      // استفاده از get برای دریافت مطمئن اطلاعات
+      tempRef.get().then(snap => {
         if (snap.exists()) {
           roomId = code;
           myPlayerId = 2;
@@ -94,7 +97,7 @@
         } else {
           alert('بازی با این کد پیدا نشد!');
         }
-      });
+      }).catch(error => alert("خطا در اتصال: " + error.message));
     }
 
     function startGameUI() {
@@ -104,7 +107,6 @@
       
       initBoard();
       
-      // اتصال لحظه‌ای به دیتابیس همین روم
       dbRef.on('value', snap => {
         const data = snap.val();
         if (data) gameState = data;
@@ -157,7 +159,7 @@
         newState.turn = myPlayerId === 1 ? 2 : 1;
       }
 
-      dbRef.set(newState);
+      dbRef.set(newState).catch(error => alert("خطا در ثبت حرکت: " + error.message));
     }
 
     function checkBoxes(lines, boxes) {
